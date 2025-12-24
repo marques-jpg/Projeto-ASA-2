@@ -10,73 +10,86 @@ int main() {
     ios::sync_with_stdio(0);
     cin.tie(0);
     
-    int N; 
-    if (!(cin >> N)) return 0;
-    int M; cin >> M;
-    int m1, m2; cin >> m1 >> m2;
-    int K; cin >> K;
-    vector<vector<int>> adj(N + 1);
-    vector<int> indeg(N + 1, 0);
-    for (int i = 0; i < K; ++i) {
-        int a, b; cin >> a >> b;
-        adj[a].push_back(b);
-        ++indeg[b];
+    // Read basic input: number of nodes, number of trucks, truck range to print, and number of edges
+    int nNodes; 
+    if (!(cin >> nNodes)) return 0;
+    int numTrucks; cin >> numTrucks;
+    int startTruck, endTruck; cin >> startTruck >> endTruck;
+    int numEdges; cin >> numEdges;
+
+    // Build directed graph adjacency list and indegree array
+    vector<vector<int>> adj(nNodes + 1);
+    vector<int> indeg(nNodes + 1, 0);
+    for (int i = 0; i < numEdges; ++i) {
+        int from, to; cin >> from >> to;
+        adj[from].push_back(to);
+        ++indeg[to];
     }
 
-    queue<int> q;
-    for (int i = 1; i <= N; ++i) if (indeg[i] == 0) q.push(i);
-    vector<int> topo;
-    while (!q.empty()) {
-        int u = q.front(); q.pop();
-        topo.push_back(u);
-        for (int v : adj[u]) {
-            if (--indeg[v] == 0) q.push(v);
+    // Compute topological order using Kahn's algorithm (queue of zero-indegree nodes)
+    queue<int> qNodes;
+    for (int i = 1; i <= nNodes; ++i) if (indeg[i] == 0) qNodes.push(i);
+    vector<int> topoOrder;
+    while (!qNodes.empty()) {
+        int node = qNodes.front(); qNodes.pop();
+        topoOrder.push_back(node);
+        for (int neighbor : adj[node]) {
+            if (--indeg[neighbor] == 0) qNodes.push(neighbor);
         }
     }
-    if ((int)topo.size() != N) {
+    // If the graph has a cycle (not a DAG), exit early
+    if ((int)topoOrder.size() != nNodes) {
         return 0;
     }
 
-    vector<vector<pair<int,int>>> truckPairs(M + 1);
+    // For each truck id, store assigned (source,destination) pairs
+    vector<vector<pair<int,int>>> truckPairs(numTrucks + 1);
 
-    vector<unsigned long long> ways(N + 1);
-    vector<int> waysMod(N + 1);
-    vector<char> hasPath(N + 1);
+    // Buffers used during per-source DP
+    vector<unsigned long long> pathCount(nNodes + 1); // total path counts (may overflow but kept)
+    vector<int> pathCountMod(nNodes + 1);             // path counts modulo numTrucks
+    vector<char> reachable(nNodes + 1);               // whether a node is reachable from current source
 
-    for (int src = 1; src <= N; ++src) {
-        fill(ways.begin(), ways.end(), 0);
-        fill(waysMod.begin(), waysMod.end(), 0);
-        fill(hasPath.begin(), hasPath.end(), 0);
-        ways[src] = 1;
-        waysMod[src] = 1;
-        hasPath[src] = 1;
+    // For every source node, compute number of distinct paths to all reachable nodes in the DAG
+    for (int source = 1; source <= nNodes; ++source) {
+        fill(pathCount.begin(), pathCount.end(), 0);
+        fill(pathCountMod.begin(), pathCountMod.end(), 0);
+        fill(reachable.begin(), reachable.end(), 0);
+        pathCount[source] = 1;
+        pathCountMod[source] = 1;
+        reachable[source] = 1;
 
-        for (int u : topo) {
-            if (!hasPath[u]) continue;
-            for (int v : adj[u]) {
-                ways[v] += ways[u];
-                waysMod[v] = (waysMod[v] + waysMod[u]) % M;
-                hasPath[v] = 1;
+        // Propagate counts along topological order so each edge contributes to destination counts
+        for (int node : topoOrder) {
+            if (!reachable[node]) continue;
+            for (int neighbor : adj[node]) {
+                pathCount[neighbor] += pathCount[node];
+                pathCountMod[neighbor] = (pathCountMod[neighbor] + pathCountMod[node]) % numTrucks;
+                reachable[neighbor] = 1;
             }
         }
 
-        for (int dst = 1; dst <= N; ++dst) {
-            if (dst == src) continue;
-            if (!hasPath[dst]) continue;
-            int truck = 1 + waysMod[dst] % M;
-            truckPairs[truck].push_back({src, dst});
+        // For each reachable destination (different from source), map the pair to a truck id
+        // Truck id is determined by (path count mod numTrucks) mapped to 1..numTrucks
+        for (int dest = 1; dest <= nNodes; ++dest) {
+            if (dest == source) continue;
+            if (!reachable[dest]) continue;
+            int truckId = 1 + pathCountMod[dest] % numTrucks;
+            truckPairs[truckId].push_back({source, dest});
         }
     }
 
-    for (int t = 1; t <= M; ++t) {
-        auto &v = truckPairs[t];
-        sort(v.begin(), v.end());
+    // Sort pairs for each truck for deterministic output
+    for (int truckId = 1; truckId <= numTrucks; ++truckId) {
+        auto &pairsVec = truckPairs[truckId];
+        sort(pairsVec.begin(), pairsVec.end());
     }
 
-    for (int t = m1; t <= m2; ++t) {
-        cout << 'C' << t;
-        for (const auto &p : truckPairs[t]) {
-            cout << ' ' << p.first << ',' << p.second;
+    // Print assigned pairs for trucks in the requested range
+    for (int truckId = startTruck; truckId <= endTruck; ++truckId) {
+        cout << 'C' << truckId;
+        for (const auto &pr : truckPairs[truckId]) {
+            cout << ' ' << pr.first << ',' << pr.second;
         }
         cout << '\n';
     }
